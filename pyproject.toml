@@ -1,0 +1,11 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "easymanim"
+version = "0.1.0"
+# Add other metadata later if needed (authors, description, etc.)
+
+[tool.setuptools.packages.find]
+where = ["src"]  # Look for packages in the src directory 

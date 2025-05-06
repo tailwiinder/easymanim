@@ -1,0 +1,3 @@
+manim>=0.18.0
+ttkbootstrap
+Pillow 
