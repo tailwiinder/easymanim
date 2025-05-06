@@ -4,7 +4,7 @@ EasyManim is a user-friendly desktop application designed to simplify the creati
 
 Inspired by the usability of modern visual editors, EasyManim aims to make Manim's capabilities more accessible to educators, content creators, and anyone interested in producing high-quality mathematical visualizations.
 
-**(Consider adding a screenshot or GIF of the EasyManim UI in action here)**
+![EasyManim UI](./src/assets/easymanim_ss.png)
 
 ## Key Features (V0.1)
 
@@ -23,22 +23,22 @@ Inspired by the usability of modern visual editors, EasyManim aims to make Manim
 
 ## Tech Stack
 
-*   **Python 3.x**
+*   **Python 3.12.3**
 *   **Manim Community Edition** (tested with v0.18.0 and later)
 *   **Tkinter** (via `ttkbootstrap` for modern styling)
 *   **Pillow** (for image handling in previews)
 
 ## Prerequisites
 
-*   Python 3.7+ installed and added to your PATH.
+*   Python 3.12.3 installed and added to your PATH.
 *   A working Manim Community Edition installation. Please follow the [official Manim installation guide](https://docs.manim.community/en/stable/installation/index.html). This includes dependencies like FFmpeg, LaTeX, etc.
 
 ## Installation
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/YOUR_USERNAME/EasyManim.git # Replace with your repo URL
-    cd EasyManim
+    git clone https://github.com/tailwiinder/easymanim.git # Replace with your repo URL
+    cd easymanim
     ```
 
 2.  **Create and activate a Python virtual environment:**
