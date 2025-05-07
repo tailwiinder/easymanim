@@ -152,6 +152,26 @@ class SceneBuilder:
         else:
             print(f"Error: Object with ID {obj_id} not found for update.")
 
+    def remove_object(self, obj_id: str) -> bool:
+        """Removes an object with the specified ID from the scene.
+        
+        Args:
+            obj_id: The unique ID of the object to remove.
+            
+        Returns:
+            Boolean indicating whether the object was successfully removed.
+        """
+        for i, obj in enumerate(self.objects):
+            if obj.get('id') == obj_id:
+                # Remove the object at the found index
+                removed_obj = self.objects.pop(i)
+                print(f"Removed object: {removed_obj['type']} with ID {obj_id}")
+                return True
+                
+        # If we reach here, no object with the given ID was found
+        print(f"Error: Object with ID {obj_id} not found for removal.")
+        return False
+
     def set_object_animation(self, obj_id: str, anim_name: str):
         """Sets the animation type for a specific object within its 'properties' dict."""
         target_object_data = None
@@ -320,4 +340,4 @@ class SceneBuilder:
         script_lines = imports + ["", class_def, construct_def, indented_body]
         script_content = "\n".join(script_lines)
 
-        return script_content, scene_name 
+        return script_content, scene_name

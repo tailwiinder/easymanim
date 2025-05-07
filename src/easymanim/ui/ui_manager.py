@@ -243,6 +243,39 @@ class UIManager:
             preview_panel = self.panels.get("preview")
             if preview_panel:
                  preview_panel.show_idle_state() 
+
+    def handle_object_deleted(self, obj_id: str):
+        """Handle when an object is deleted from the timeline.
+        
+        Args:
+            obj_id (str): The ID of the deleted object
+        """
+        print(f"UIManager: Object {obj_id} deleted, updating scene and preview")
+        
+        try:
+            # 1. Tell the scene builder to remove the object
+            self.scene_builder.remove_object(obj_id)
+            
+            # 2. Clear the property panel if the deleted object was selected
+            if self.selected_object_id == obj_id:
+                self.selected_object_id = None
+                properties_panel = self.panels.get("properties")
+                if properties_panel:
+                    properties_panel.show_placeholder()
+                
+            # 3. Update status bar
+            statusbar_panel = self.panels.get("statusbar")
+            if statusbar_panel:
+                statusbar_panel.set_status(f"Object {obj_id} deleted")
+            
+            # 4. Refresh the preview to show the scene without the deleted object
+            self.handle_refresh_preview_request()
+            
+        except Exception as e:
+            print(f"[UIManager Error] Failed to delete object {obj_id}: {e}")
+            statusbar_panel = self.panels.get("statusbar")
+            if statusbar_panel:
+                statusbar_panel.set_status(f"Error deleting object {obj_id}")
                  
     # --- Callback Methods (to be implemented via TDD) ---
     
