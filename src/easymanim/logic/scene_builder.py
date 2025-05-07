@@ -214,7 +214,20 @@ class SceneBuilder:
             "import numpy as np # Often needed for positioning"
         ]
         
-        # Generate code for each object
+        # Sort objects by z-position for creation order
+        objects_by_type = {
+            'Text': [],
+            'Other': []
+        }
+        
+        # Separate text objects from other objects
+        for obj in self.objects:
+            if obj['type'] == 'Text':
+                objects_by_type['Text'].append(obj)
+            else:
+                objects_by_type['Other'].append(obj)
+        
+        # All objects need to be created in the regular way
         for obj in self.objects:
             obj_id = obj['id']
             obj_type = obj['type']
@@ -224,12 +237,22 @@ class SceneBuilder:
             var_name = f"{obj_type.lower()}_{obj_id[-6:]}"
             
             # --- Object Instantiation (common for all) ---
-            prop_args_for_script = [] # Renamed to avoid conflict if you had prop_args locally
+            prop_args_for_script = [] 
             pos_x = properties.get('pos_x', 0.0)
             pos_y = properties.get('pos_y', 0.0)
             pos_z = properties.get('pos_z', 0.0)
-            move_to_str = f".move_to(np.array([{pos_x}, {pos_y}, {pos_z}]))"
             
+            # Use move_to for x,y positioning only
+            move_to_str = f".move_to(np.array([{pos_x}, {pos_y}, 0]))"
+            
+            # Convert z position to z_index in a safe way - only for non-text objects
+            # Higher z values = higher z_index = appears on top
+            z_index_value = max(0, int(pos_z * 10))
+            
+            # For non-text objects, handle z_index as a parameter
+            if obj_type != 'Text' and z_index_value > 0:
+                prop_args_for_script.append(f"z_index={z_index_value}")
+                
             instantiation_base = f"{var_name} = {obj_type}("
             if obj_type == 'Text':
                 text_content_formatted = self._format_manim_prop(properties.get('text_content', ''))
@@ -237,12 +260,10 @@ class SceneBuilder:
                 font_size_val = properties.get('font_size')
                 if font_size_val is not None:
                     prop_args_for_script.append(f"font_size={self._format_manim_prop(font_size_val)}")
-                # Manim's Text uses 'color' for fill, but also accepts 'fill_color'. Using 'color' for primary text color.
                 prop_args_for_script.append(f"color={self._format_manim_prop(properties.get('fill_color', '#FFFFFF'))}")
                 prop_args_for_script.append(f"fill_opacity={self._format_manim_prop(properties.get('opacity', 1.0))}")
                 prop_args_for_script.append(f"stroke_color={self._format_manim_prop(properties.get('stroke_color', '#000000'))}")
                 prop_args_for_script.append(f"stroke_opacity={self._format_manim_prop(properties.get('stroke_opacity', 1.0))}")
-                # stroke_width is deliberately omitted for Text for now as it behaves differently than shapes.
             elif obj_type == 'Circle':
                 prop_args_for_script.append(f"radius={self._format_manim_prop(properties.get('radius', 1.0))}")
                 prop_args_for_script.append(f"fill_color={self._format_manim_prop(properties.get('fill_color', '#FFFFFF'))}")
@@ -262,6 +283,8 @@ class SceneBuilder:
                 if obj_type == 'Text' and instantiation_base.endswith(text_content_formatted):
                     instantiation_base += ", "
                 instantiation_base += ", ".join(prop_args_for_script)
+            
+            # Base instantiation
             final_instantiation = f"{instantiation_base}){move_to_str}"
             object_creation_lines.append(final_instantiation)
             
@@ -280,21 +303,82 @@ class SceneBuilder:
                 elif animation == 'Write' and obj_type == 'Text':
                     animation_command_str = f"Write({var_name})"
                     is_intro_anim = True
-                # Add other known intro animations here and set is_intro_anim = True
-
+                
                 if animation_command_str:
                     play_lines.append(f"self.play({animation_command_str})")
                     if is_intro_anim:
                         added_by_intro_animation = True
-                elif animation == 'Write' and obj_type != 'Text': # Non-applicable animation
+                elif animation == 'Write' and obj_type != 'Text': 
                     add_lines.append(f"self.add({var_name}) # 'Write' animation not applicable to {obj_type}")
-                else: # Unknown animation type, or known non-intro animation
+                else:
                     add_lines.append(f"self.add({var_name}) # Default add for animation: {animation}")
             
-            # Add object if it wasn't added by an intro animation, or if it's a preview
-            if not added_by_intro_animation:
-                add_lines.append(f"self.add({var_name})")
+            # Skip adding objects here - we'll handle them based on z-position
+            if not added_by_intro_animation and animation != 'None':
+                add_lines.append(f"self.add({var_name}) # For animation: {animation}")
 
+        # Collect objects for z-ordering
+        shape_objects = []  # Non-text objects
+        text_objects = []   # Text objects only
+        
+        for obj in self.objects:
+            obj_id = obj['id']
+            obj_type = obj['type']
+            animation = obj['properties'].get('animation', 'None')
+            var_name = f"{obj_type.lower()}_{obj_id[-6:]}"
+            pos_z = obj['properties'].get('pos_z', 0)
+            
+            # Skip objects already handled by animations
+            if script_type == 'render':
+                if animation == 'FadeIn' or animation == 'GrowFromCenter':
+                    continue
+                if animation == 'Write' and obj_type == 'Text':
+                    continue
+            
+            # Separate text and non-text objects
+            if obj_type == 'Text':
+                text_objects.append((var_name, pos_z))
+            else:
+                shape_objects.append((var_name, pos_z, obj_type))
+        
+        # First add all non-text objects in z-order
+        if shape_objects:
+            # Sort by z-position (low to high)
+            shape_objects.sort(key=lambda x: x[1])
+            
+            add_lines.append("\n# Non-text objects added in z-order")
+            for var_name, z_pos, obj_type in shape_objects:
+                add_lines.append(f"self.add({var_name})  # {obj_type} with z={z_pos}")
+        
+        # Then add all text objects in z-order
+        if text_objects:
+            # Sort by z-position (low to high)
+            text_objects.sort(key=lambda x: x[1])
+            
+            add_lines.append("\n# Text objects added last to ensure proper z-ordering")
+            for var_name, z_pos in text_objects:
+                add_lines.append(f"self.add({var_name})  # Text with z={z_pos}")
+            
+            # Then bring ALL text objects to front explicitly
+            if text_objects:
+                add_lines.append("\n# Ensure ALL text objects appear on top")
+                for var_name, z_pos in text_objects:
+                    add_lines.append(f"self.bring_to_front({var_name})  # Force text on top")
+                
+            # Extra handling for text with positive z-values
+            texts_with_positive_z = [(name, z) for name, z in text_objects if z > 0]
+            if texts_with_positive_z:
+                # Sort by descending z-position (highest z first) for proper layering
+                texts_with_positive_z.sort(key=lambda x: -x[1])  # Note the negative sign for descending sort
+                
+                add_lines.append("\n# Extra handling for text with positive z-values")
+                for var_name, z_pos in texts_with_positive_z:
+                    # Apply multiple bring_to_front calls for higher z-values
+                    # This is a hack, but it helps ensure text with higher z appears on top
+                    repeats = max(1, int(z_pos))
+                    for _ in range(repeats):
+                        add_lines.append(f"self.bring_to_front({var_name})  # Extra priority for z={z_pos}")
+        
         # Determine Scene Name and Class Definition
         scene_name = "PreviewScene" if script_type == 'preview' else "EasyManimScene"
         class_def = f"class {scene_name}(Scene):"
@@ -302,6 +386,13 @@ class SceneBuilder:
 
         # Assemble the final script
         construct_body_lines = []
+        
+        # If z-position is used, add a comment explaining z-index 
+        if any(abs(obj['properties'].get('pos_z', 0.0)) > 0.001 for obj in self.objects):
+            construct_body_lines.append("# Z-positioning is being used via z_index")
+            construct_body_lines.append("# Higher z_index values appear on top (closer to viewer)")
+        
+        # Add all object creation code
         construct_body_lines.extend(object_creation_lines)
 
         # For render scripts, play lines (animations) come first, then residual add lines.
