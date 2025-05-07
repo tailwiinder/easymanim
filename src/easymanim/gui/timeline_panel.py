@@ -16,6 +16,7 @@ class TimelinePanel(ttk.Frame):
         self.ui_manager = ui_manager
         self.canvas = None
         self.object_canvas_items = {} # Map canvas item ID -> obj_id
+        self.obj_components = {}  # Map obj_id -> (rect_id, text_id, delete_btn_id)
         self._placeholder_id = None
 
         self._create_widgets()
@@ -106,8 +107,8 @@ class TimelinePanel(ttk.Frame):
             self.canvas.delete(self._placeholder_id)
             self._placeholder_id = None
 
-        # 2. Calculate position for the new block
-        num_blocks = len(self.object_canvas_items)
+        # 2. Calculate position for the new block - use number of objects to avoid gaps
+        num_blocks = len(self.obj_components)  # Count actual objects, not canvas items
         block_height = 30  # Configurable height for each block
         padding = 5
         y_start = padding + num_blocks * (block_height + padding)
@@ -141,11 +142,38 @@ class TimelinePanel(ttk.Frame):
             tags=(obj_tag, block_tag) # Apply both tags
         )
 
-        # 5. Store mapping (using rectangle ID as the primary reference)
-        self.object_canvas_items[rect_id] = obj_id
-        # Optionally store text_id too if needed later, maybe map obj_id -> (rect_id, text_id)
+        # 5. Create Delete Button
+        delete_btn_size = 20  # Size of the delete button
+        btn_x = x_end - delete_btn_size - padding
+        btn_y = y_start + (block_height / 2)
+        
+        # Draw delete button (a circle with X)
+        delete_btn_id = self.canvas.create_oval(
+            btn_x - delete_btn_size/2, btn_y - delete_btn_size/2,
+            btn_x + delete_btn_size/2, btn_y + delete_btn_size/2,
+            fill="red",
+            tags=(f"delete_btn_{obj_id}",)  # Only use delete button tag, not obj tag
+        )
+        
+        # Add X mark inside the delete button
+        x_mark_id = self.canvas.create_text(
+            btn_x, btn_y,
+            text="X",
+            fill="white",
+            font=("Arial", 10, "bold"),
+            tags=(f"delete_btn_{obj_id}",)  # Only use delete button tag, not obj tag
+        )
 
-        # 6. Update scroll region (important for potential future scrolling)
+        # 6. Store mapping for all canvas items
+        self.object_canvas_items[rect_id] = obj_id
+        self.object_canvas_items[text_id] = obj_id
+        self.object_canvas_items[delete_btn_id] = obj_id
+        self.object_canvas_items[x_mark_id] = obj_id
+        
+        # Store all components related to this object
+        self.obj_components[obj_id] = (rect_id, text_id, delete_btn_id, x_mark_id)
+
+        # 7. Update scroll region (important for potential future scrolling)
         self.canvas.config(scrollregion=self.canvas.bbox(tk.ALL))
 
     def highlight_block(self, selected_obj_id: Optional[str]):
@@ -158,56 +186,166 @@ class TimelinePanel(ttk.Frame):
         highlight_outline = "red"
         highlight_width = 2
 
+        # Get unique object IDs
+        unique_obj_ids = set(self.object_canvas_items.values())
+        
         # Iterate through all managed object blocks
-        for rect_id, obj_id in self.object_canvas_items.items():
+        for obj_id in unique_obj_ids:
+            if obj_id in self.obj_components:
+                rect_id = self.obj_components[obj_id][0]  # Get the rectangle ID
+                try:
+                    # Check if item still exists and is a rectangle
+                    if self.canvas.type(rect_id) == "rectangle":
+                        if obj_id == selected_obj_id:
+                            # Apply highlight style
+                            self.canvas.itemconfig(rect_id, outline=highlight_outline, width=highlight_width)
+                        else:
+                            # Apply default style
+                            self.canvas.itemconfig(rect_id, outline=default_outline, width=default_width)
+                except tk.TclError:
+                    # Item might have been deleted externally? Log or ignore.
+                    print(f"[TimelinePanel Warning] Could not configure item {rect_id} during highlight.")
+                    continue
+
+    def delete_block(self, obj_id: str):
+        """Delete a block from the timeline."""
+        if obj_id in self.obj_components:
+            # Get all canvas items associated with this object
+            components = self.obj_components[obj_id]
+            
+            # Delete all components from canvas
+            for item_id in components:
+                try:
+                    self.canvas.delete(item_id)
+                    # Remove from object_canvas_items mapping
+                    if item_id in self.object_canvas_items:
+                        del self.object_canvas_items[item_id]
+                except tk.TclError:
+                    print(f"[TimelinePanel Warning] Could not delete item {item_id}.")
+            
+            # Remove from obj_components mapping
+            del self.obj_components[obj_id]
+            
+            # Reposition remaining blocks (fill the gap)
+            self._reposition_blocks()
+            
+            # Show placeholder if no blocks left
+            if not self.obj_components:
+                self._draw_placeholder_text()
+                
+            # Notify UI manager about deletion
+            # We need to be careful about this call - make sure it exists in UIManager
             try:
-                # Check if item still exists and is a rectangle
-                if self.canvas.type(rect_id) == "rectangle":
-                    if obj_id == selected_obj_id:
-                        # Apply highlight style
-                        self.canvas.itemconfig(rect_id, outline=highlight_outline, width=highlight_width)
-                        # Optional: Raise the selected item to the top
-                        # self.canvas.tag_raise(rect_id)
-                        # if text_id: self.canvas.tag_raise(text_id) # Need text_id mapping too
-                    else:
-                        # Apply default style
-                        self.canvas.itemconfig(rect_id, outline=default_outline, width=default_width)
-            except tk.TclError:
-                # Item might have been deleted externally? Log or ignore.
-                print(f"[TimelinePanel Warning] Could not configure item {rect_id} during highlight.")
-                continue
+                # Call handle_object_deleted if it exists
+                if hasattr(self.ui_manager, 'handle_object_deleted'):
+                    self.ui_manager.handle_object_deleted(obj_id)
+                else:
+                    # Fallback - simply deselect if the object was selected
+                    self.ui_manager.handle_timeline_selection(None)
+                    print(f"[TimelinePanel Warning] UIManager has no handle_object_deleted method. Object {obj_id} was deleted from timeline but UIManager wasn't properly notified.")
+            except Exception as e:
+                print(f"[TimelinePanel Error] Failed to notify UIManager about deletion: {e}")
+            
+            # Update scroll region
+            self.canvas.config(scrollregion=self.canvas.bbox(tk.ALL))
+
+    def _reposition_blocks(self):
+        """Reposition all blocks to ensure they're stacked properly without gaps."""
+        # Get all object IDs
+        obj_ids = list(self.obj_components.keys())
+        
+        # Sort object IDs by their current Y position to maintain visual order
+        obj_ids.sort(
+            key=lambda obj_id: self.canvas.coords(self.obj_components[obj_id][0])[1] 
+            if obj_id in self.obj_components else float('inf')
+        )
+        
+        block_height = 30  # Same as in add_block
+        padding = 5
+        
+        # Get canvas width for block width
+        canvas_width = self.canvas.winfo_width()
+        if canvas_width <= 1: canvas_width = 200  # Default width if not rendered yet
+        
+        # Reposition each block with consistent spacing - no gaps
+        for i, obj_id in enumerate(obj_ids):
+            if obj_id in self.obj_components:
+                components = self.obj_components[obj_id]
+                rect_id, text_id, delete_btn_id, x_mark_id = components
+                
+                # Calculate new position - consistent spacing between blocks
+                y_start = padding + i * (block_height + padding)
+                x_start = padding
+                x_end = canvas_width - padding
+                y_end = y_start + block_height
+                
+                # Move rectangle
+                self.canvas.coords(rect_id, x_start, y_start, x_end, y_end)
+                
+                # Move text
+                self.canvas.coords(text_id, x_start + padding, y_start + block_height / 2)
+                
+                # Move delete button
+                delete_btn_size = 20
+                btn_x = x_end - delete_btn_size - padding
+                btn_y = y_start + (block_height / 2)
+                
+                self.canvas.coords(delete_btn_id, 
+                                  btn_x - delete_btn_size/2, btn_y - delete_btn_size/2,
+                                  btn_x + delete_btn_size/2, btn_y + delete_btn_size/2)
+                
+                # Move X mark
+                self.canvas.coords(x_mark_id, btn_x, btn_y)
+        
+        # Debug output to verify blocks were repositioned
+        print(f"Repositioned {len(obj_ids)} blocks on timeline")
 
     # --- Event Handlers ---
 
     def _on_canvas_click(self, event):
-        """Handle clicks on the timeline canvas to select objects."""
+        """Handle clicks on the timeline canvas to select objects or delete them."""
         if not self.canvas:
             return
 
         # Find items directly overlapping the click coordinates
         overlapping_items = self.canvas.find_overlapping(event.x, event.y, event.x, event.y)
 
-        selected_obj_id = None
+        clicked_obj_id = None
+        is_delete_button = False
+        
         if overlapping_items:
-            # Iterate overlapping items (usually just one, but check just in case)
+            # Iterate overlapping items
             for item_id in overlapping_items:
                 tags = self.canvas.gettags(item_id)
                 print(f"_on_canvas_click: Click near ({event.x}, {event.y}), found overlapping item {item_id} with tags: {tags}") # Debug
-                # Find the object ID from the specific object tag
+                
+                # Check if this is a delete button
                 for tag in tags:
-                    print(f"_on_canvas_click: Checking tag: {tag}") # Debug
+                    if tag.startswith("delete_btn_"):
+                        clicked_obj_id = tag[11:]  # Extract the ID after "delete_btn_"
+                        is_delete_button = True
+                        print(f"_on_canvas_click: Found delete button for obj_id: {clicked_obj_id}") # Debug
+                        break
+                
+                if is_delete_button:
+                    break  # Found delete button, no need to check other items
+                
+                # If not a delete button, check if it's another part of an object
+                for tag in tags:
                     if tag.startswith("obj_"):
-                        selected_obj_id = tag[4:] # Extract the ID after "obj_"
-                        print(f"_on_canvas_click: Found obj_id: {selected_obj_id} from item {item_id}") # Debug
-                        break # Found the relevant tag for this item
-                if selected_obj_id:
-                    break # Found the object ID from one of the overlapping items
-
-        if selected_obj_id:
-            # Found an object block (rect or text) under the cursor
-            print(f"Timeline item {item_id} clicked, selecting obj_id={selected_obj_id}") # Debug
-            self.ui_manager.handle_timeline_selection(selected_obj_id)
+                        clicked_obj_id = tag[4:]  # Extract the ID after "obj_"
+                        print(f"_on_canvas_click: Found obj_id: {clicked_obj_id} from item {item_id}") # Debug
+                        break
+        
+        if clicked_obj_id and is_delete_button:
+            # Delete the object if delete button was clicked
+            print(f"Delete button clicked for object {clicked_obj_id}") # Debug
+            self.delete_block(clicked_obj_id)
+        elif clicked_obj_id:
+            # Otherwise select the object
+            print(f"Timeline item selected: obj_id={clicked_obj_id}") # Debug
+            self.ui_manager.handle_timeline_selection(clicked_obj_id)
         else:
-            # No item with an "obj_" tag was directly under the cursor
+            # No item was under the cursor
             print(f"Timeline background clicked at ({event.x}, {event.y})") # Debug
-            self.ui_manager.handle_timeline_selection(None) 
+            self.ui_manager.handle_timeline_selection(None)

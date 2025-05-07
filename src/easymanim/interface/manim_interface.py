@@ -7,6 +7,7 @@ import os
 import tempfile
 import pathlib
 from typing import TYPE_CHECKING, Callable, Union, List, Literal
+import sys
 
 # Avoid circular import for type hinting
 if TYPE_CHECKING:
@@ -130,7 +131,7 @@ class ManimInterface:
         Handles subprocess execution, result checking, and cleanup.
         """
         command = [
-            'python', '-m', 'manim', 
+            sys.executable, '-m', 'manim', 
             script_path, 
             scene_name
         ] + flags
