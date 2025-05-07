@@ -120,6 +120,8 @@ class PropertiesPanel(ttk.Frame):
             display_key_name = 'Stroke Width'
         elif key == 'stroke_opacity':
             display_key_name = 'Stroke Opacity'
+        elif key == 'pos_z':
+            display_key_name = 'Z Position (Depth)'
         
         label = ttk.Label(self, text=f"{display_key_name}:")
         label.grid(row=row, column=0, sticky=tk.W, padx=5, pady=2)
@@ -140,6 +142,13 @@ class PropertiesPanel(ttk.Frame):
             # We should only create entry if key is actually in props (checked by caller display_properties)
             widget = self._create_entry(key, value)
             widget.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=2)
+            
+            # Add helper text for Z position
+            if key == 'pos_z':
+                helper_text = ttk.Label(self, text="Higher value = closer to viewer", 
+                                        font=("", 8), foreground="gray")
+                helper_text.grid(row=row, column=2, sticky=tk.W, padx=5, pady=2)
+                self.widgets[f"{key}_helper"] = helper_text
         else:
             # Fallback for any other properties, display as non-editable text for now
             widget = ttk.Label(self, text=str(value))

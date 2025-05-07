@@ -190,10 +190,12 @@ class UIManager:
             print("  render_async called on ManimInterface")
         
         except Exception as e:
+            import traceback
             print(f"[UIManager Error] Failed during refresh preview setup: {e}")
+            print(f"Traceback: {traceback.format_exc()}")
             statusbar_panel = self.panels.get("statusbar")
             if statusbar_panel:
-                statusbar_panel.set_status("Error generating preview script")
+                statusbar_panel.set_status(f"Error generating preview: {str(e)}")
             # Potentially show error to user or update preview panel state
             preview_panel = self.panels.get("preview")
             if preview_panel:
@@ -313,4 +315,3 @@ class UIManager:
         # Reset UI state (e.g., re-enable buttons) regardless of success/failure
         if preview_panel:
             preview_panel.show_idle_state()
-        
